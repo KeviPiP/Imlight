@@ -17,11 +17,13 @@
  */
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using Akka.Actor;
 using Imcodec.ObjectProperty.TypeCache;
 using Imlight.Common;
+using Imlight.CoreLib.Game.Results.Contexts;
 using Imlight.CoreLib.Shared.Networking;
 using Imlight.CoreLib.Shared.Packets;
 
@@ -34,6 +36,11 @@ namespace Imlight.CoreLib.Game.Results;
 public class ResultExecutorActor(IResultContext context) : ReceiveProtocolDispatcher, IWithTimers {
 
     private const uint RESULT_HANDLER_TIMEOUT_MS = 30000;
+
+    // Result types we've already warned about having no handler. A missing handler can be
+    // hit thousands of times per second (e.g. a trigger that re-fires every tick), so we
+    // log each unhandled type only once to avoid flooding the log.
+    private static readonly ConcurrentDictionary<string, byte> s_warnedMissingHandlers = new();
 
     private readonly IResultContext _context = context;
     private readonly Queue<Result> _resultQueue = new();
@@ -111,11 +118,17 @@ public class ResultExecutorActor(IResultContext context) : ReceiveProtocolDispat
         var handlerType = ResultDispatcher.FindHandlerForResult(resultType, _context);
 
         if (handlerType is null) {
-            Logger.Warning("No handler registered for result type: {0}",
-                Logger.Args(resultType.Name));
+            // Dump the result's full contents (it's a generated record, so ToString prints
+            // every property) and the context it came from, so an unhandled result tells us
+            // exactly what fired it and where. Logged once per type to avoid flooding.
+            if (s_warnedMissingHandlers.TryAdd(resultType.Name, 0)) {
+                Logger.Warning("No handler registered for result type: {0} | result: {1} | context: {2} " +
+                    "(further occurrences suppressed)",
+                    Logger.Args(resultType.Name, result, DescribeContext(_context)));
+            }
 
             ProcessNextResult();
-            
+
             return;
         }
 
@@ -145,6 +158,50 @@ public class ResultExecutorActor(IResultContext context) : ReceiveProtocolDispat
 
             ProcessNextResult();
         }
+    }
+
+    /// <summary>
+    /// Builds a short, human-readable description of the context a result was executed in
+    /// (the trigger / quest / goal it belongs to, and which player it ran for), for
+    /// diagnostic logging of unhandled result types.
+    /// </summary>
+    private static string DescribeContext(IResultContext context) {
+        if (context is null) {
+            return "<none>";
+        }
+
+        var parts = new List<string>();
+        switch (context) {
+            case ZoneResultContext zone when zone.Trigger?.TriggerData is not null:
+                parts.Add($"trigger={zone.Trigger.TriggerData.m_triggerName}");
+                break;
+            case QuestResultContext quest:
+                if (!string.IsNullOrEmpty(quest.QuestName)) {
+                    parts.Add($"quest={quest.QuestName}");
+                }
+                if (!string.IsNullOrEmpty(quest.GoalName)) {
+                    parts.Add($"goal={quest.GoalName}");
+                }
+                break;
+            case GenericResultContext generic:
+                if (!string.IsNullOrEmpty(generic.QuestName)) {
+                    parts.Add($"quest={generic.QuestName}");
+                }
+                if (!string.IsNullOrEmpty(generic.GoalName)) {
+                    parts.Add($"goal={generic.GoalName}");
+                }
+                if (!string.IsNullOrEmpty(generic.TriggerName)) {
+                    parts.Add($"trigger={generic.TriggerName}");
+                }
+                break;
+        }
+
+        var playerObj = context.GetPlayerObj();
+        if (playerObj is not null) {
+            parts.Add($"player={playerObj.m_globalID.Full}");
+        }
+
+        return parts.Count == 0 ? context.GetType().Name : string.Join(", ", parts);
     }
 
     private void SendFinalReply(bool success) {

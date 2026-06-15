@@ -624,6 +624,86 @@ public class Wizard : IDisposable {
         return true;
     }
 
+    public bool AddRecipe(Recipe recipe) {
+        if (recipe is null) {
+            Logger.Warning("Cannot add recipe to recipe bag because that recipe does not exist.");
+
+            return false;
+        }
+
+        // Ensure the recipe has a global id for the client recipe bag.
+        if (recipe.m_globalID == 0) {
+            recipe.m_globalID = (GID) RandomGen.GenerateGUID();
+        }
+
+        var success = AlchemyBehavior.AddRecipe(recipe);
+        if (!success) {
+            return false;
+        }
+
+        // Persistent save.
+        WizardRecipeCollection.AddRecipe(CharId, recipe);
+        WizardCollection.UpdateCharacterItems(this);
+
+        return true;
+    }
+
+    public bool RemoveRecipe(uint recipeNameId) {
+        if (!AlchemyBehavior.RemoveRecipe(recipeNameId)) {
+            return false;
+        }
+
+        // Persistent save.
+        WizardRecipeCollection.RemoveRecipe(CharId, recipeNameId);
+        WizardCollection.UpdateCharacterItems(this);
+
+        return true;
+    }
+
+    public bool AddCraftingSlot(CraftingSlot craftingSlot) {
+        if (craftingSlot is null) {
+            Logger.Warning("Cannot add crafting slot because that slot does not exist.");
+
+            return false;
+        }
+
+        // Ensure the slot has a global id for the client crafting bag.
+        if (craftingSlot.m_globalID == 0) {
+            craftingSlot.m_globalID = (GID) RandomGen.GenerateGUID();
+        }
+
+        var success = AlchemyBehavior.AddCraftingSlot(craftingSlot);
+        if (!success) {
+            return false;
+        }
+
+        // Persistent save.
+        WizardCraftingSlotCollection.AddCraftingSlot(CharId, craftingSlot);
+        WizardCollection.UpdateCharacterItems(this);
+
+        return true;
+    }
+
+    public bool RemoveCraftingSlot(ulong craftingSlotId) {
+        if (!AlchemyBehavior.RemoveCraftingSlot(craftingSlotId)) {
+            return false;
+        }
+
+        // Persistent save.
+        WizardCraftingSlotCollection.RemoveCraftingSlot(CharId, craftingSlotId);
+        WizardCollection.UpdateCharacterItems(this);
+
+        return true;
+    }
+
+    public void ClearCraftingSlots() {
+        AlchemyBehavior.ClearCraftingSlots();
+
+        // Persistent save.
+        WizardCraftingSlotCollection.DeleteCraftingSlotBag(CharId);
+        WizardCollection.UpdateCharacterItems(this);
+    }
+
     public void SetNameOverride(string newName) {
         PlayerNameBehavior.NameOverride = newName;
 
@@ -1144,8 +1224,9 @@ public class Wizard : IDisposable {
             return false;
         }
 
-        // Persistent save.
-        WizardCollection.UpdateCharacterQuestBehavior(this);
+        // Persist just the registry (its own collection) — no need to rewrite the whole
+        // character document for a flag change.
+        WizardRegistryCollection.SaveRegistry(CharId, QuestBehavior.Registry);
 
         return true;
     }
@@ -1159,8 +1240,9 @@ public class Wizard : IDisposable {
             return false;
         }
 
-        // Persistent save.
-        WizardCollection.UpdateCharacterQuestBehavior(this);
+        // Persist just the registry (its own collection) — no need to rewrite the whole
+        // character document for a flag change.
+        WizardRegistryCollection.SaveRegistry(CharId, QuestBehavior.Registry);
 
         return true;
     }
@@ -1471,13 +1553,45 @@ public class Wizard : IDisposable {
         GameStats.m_highestCharacterLevelOnAccount = highestLevelOnAcc;
     }
 
-    private void AfterDatabaseLoadAlchemyBehavior()
-        => AlchemyBehavior ??= new ServerAlchemyBehavior() {
+    private void AfterDatabaseLoadAlchemyBehavior() {
+        AlchemyBehavior ??= new ServerAlchemyBehavior() {
             Reagents = [],
             Recipes = [],
             CraftingSlots = [],
             ReagentItemIds = []
         };
+
+        // The hydrated Recipes/CraftingSlots lists are [JsonIgnore] and therefore not
+        // restored by the character document load (mirroring the known reagent gap).
+        // Rehydrate them from their dedicated collections here.
+        AlchemyBehavior.Recipes ??= [];
+        AlchemyBehavior.RecipeNameIds ??= [];
+        AlchemyBehavior.CraftingSlots ??= [];
+        AlchemyBehavior.CraftingSlotIds ??= [];
+
+        if (WizardRecipeCollection.TryGetWizardRecipes(CharId, out var recipes)) {
+            AlchemyBehavior.Recipes = recipes;
+            AlchemyBehavior.RecipeNameIds = [.. recipes.Select(r => r.m_recipeNameID)];
+        }
+
+        if (WizardCraftingSlotCollection.TryGetWizardCraftingSlots(CharId, out var craftingSlots)) {
+            AlchemyBehavior.CraftingSlots = craftingSlots;
+            AlchemyBehavior.CraftingSlotIds = [.. craftingSlots.Select(s => (ulong) s.m_globalID)];
+
+            // On relog the client recomputes remaining cook time from m_timeFinished,
+            // which is an absolute unix-seconds epoch, so it remains correct without
+            // adjustment. We simply log any slots that have already finished.
+            // TODO: Grant the output for crafting slots that completed while offline
+            //       (craft-completion timer wiring is not yet implemented).
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            foreach (var slot in craftingSlots) {
+                if (slot.m_timeFinished <= now) {
+                    Logger.Debug("Crafting slot {0} ({1}) finished while {2} was offline.",
+                        Logger.Args(slot.m_globalID, slot.m_recipeName, PlayerNameBehavior.GetWizardName()));
+                }
+            }
+        }
+    }
 
     private void AfterDatabaseLoadQuestBehavior() {
         QuestBehavior ??= new ServerQuestBehavior();

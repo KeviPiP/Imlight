@@ -34,9 +34,118 @@ public class ServerAlchemyBehavior : IClientBehaviorProvider<ClientAlchemyBehavi
 
     public List<ulong> ReagentItemIds { get; set; }
 
+    // Persisted ID lists for recipes and crafting slots. The hydrated object lists
+    // below are [JsonIgnore] (rehydrated on database load from the dedicated
+    // collections), mirroring how ReagentItemIds relates to Reagents.
+    public List<uint> RecipeNameIds { get; set; }
+    public List<ulong> CraftingSlotIds { get; set; }
+
+    // Bonus crafting slots granted to the player (e.g. by crafting-rank quests). The
+    // player's total concurrent timed-craft capacity is BASE + this value. A timed
+    // craft occupies one slot for its cook duration; the item itself is granted
+    // immediately. Persisted with the character document.
+    public int BonusCraftingSlots { get; set; }
+
     [JsonIgnore] public List<ClientReagentItem> Reagents { get; set; }
     [JsonIgnore] public List<CraftingSlot> CraftingSlots { get; set; }
     [JsonIgnore] public List<Recipe> Recipes { get; set; }
+
+    /// <summary>
+    /// Adds a recipe to the player's recipe bag.
+    /// </summary>
+    /// <param name="recipe">The recipe object to be added.</param>
+    /// <returns><c>true</c> if the recipe was added, <c>false</c> if it was already known.</returns>
+    public bool AddRecipe(Recipe recipe) {
+        Recipes ??= [];
+        RecipeNameIds ??= [];
+
+        if (Recipes.Any(x => x.m_recipeNameID == recipe.m_recipeNameID)) {
+            Logger.Debug("Player already knows recipe with name id {0}.", Logger.Args(recipe.m_recipeNameID));
+
+            return false;
+        }
+
+        Recipes.Add(recipe);
+        RecipeNameIds.Add(recipe.m_recipeNameID);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Removes a recipe from the player's recipe bag based on its recipe name id.
+    /// </summary>
+    /// <param name="recipeNameId">The recipe name id to remove.</param>
+    /// <returns><c>true</c> if the recipe was removed; otherwise, <c>false</c>.</returns>
+    public bool RemoveRecipe(uint recipeNameId) {
+        Recipes ??= [];
+        RecipeNameIds ??= [];
+
+        var recipe = Recipes.FirstOrDefault(x => x.m_recipeNameID == recipeNameId);
+        if (recipe is null) {
+            Logger.Debug("Tried to remove recipe with name id {0} that does not exist in player recipe bag.",
+                Logger.Args(recipeNameId));
+
+            return false;
+        }
+
+        Recipes.Remove(recipe);
+        RecipeNameIds.Remove(recipeNameId);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Checks if the recipe bag contains a recipe with the specified recipe name id.
+    /// </summary>
+    /// <param name="recipeNameId">The recipe name id to check.</param>
+    /// <returns>True if the recipe bag contains the recipe, otherwise false.</returns>
+    public bool HasRecipe(uint recipeNameId) => Recipes?.Any(recipe => recipe.m_recipeNameID == recipeNameId) ?? false;
+
+    /// <summary>
+    /// Adds a crafting slot to the player's crafting slot bag.
+    /// </summary>
+    /// <param name="craftingSlot">The crafting slot object to be added.</param>
+    /// <returns><c>true</c> if the crafting slot was added.</returns>
+    public bool AddCraftingSlot(CraftingSlot craftingSlot) {
+        CraftingSlots ??= [];
+        CraftingSlotIds ??= [];
+
+        CraftingSlots.Add(craftingSlot);
+        CraftingSlotIds.Add(craftingSlot.m_globalID);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Removes a crafting slot from the player's crafting slot bag based on its global ID.
+    /// </summary>
+    /// <param name="craftingSlotId">The global ID of the crafting slot to remove.</param>
+    /// <returns><c>true</c> if the crafting slot was removed; otherwise, <c>false</c>.</returns>
+    public bool RemoveCraftingSlot(ulong craftingSlotId) {
+        CraftingSlots ??= [];
+        CraftingSlotIds ??= [];
+
+        var slot = CraftingSlots.FirstOrDefault(x => x.m_globalID == craftingSlotId);
+        if (slot is null) {
+            Logger.Debug("Tried to remove crafting slot with global id {0} that does not exist in player crafting bag.",
+                Logger.Args(craftingSlotId));
+
+            return false;
+        }
+
+        CraftingSlots.Remove(slot);
+        CraftingSlotIds.Remove(craftingSlotId);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Clears all crafting slots from the player's crafting slot bag.
+    /// </summary>
+    public void ClearCraftingSlots() {
+        CraftingSlots?.Clear();
+        CraftingSlotIds?.Clear();
+    }
 
     /// <summary>
     /// Adds a reagent to the player's reagent bag.

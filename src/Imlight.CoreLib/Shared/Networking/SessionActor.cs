@@ -313,9 +313,11 @@ public sealed class SessionActor : ReceiveActor, IDisposable {
                             return Directive.Stop;
                         }
                     default:
-                        Logger.Error("SessionActor {Sid} service {Class} L:{LineNumber} threw unknown exception: " +
-                                     "{Message}. Exception details: {Exception}. Inner exception: {InnerException}",
-                                     Logger.Args(SessionID, ex.TargetSite.DeclaringType, ex.TargetSite.Name, ex.Message, ex, ex.InnerException));
+                        // Unwrap the reflection TargetInvocationException so the REAL handler
+                        // exception (type + message + full stack, incl. any nested inner) is
+                        // logged, instead of the opaque "target of an invocation" wrapper.
+                        Logger.Error("SessionActor {Sid} service threw unhandled exception: {Details}",
+                                     Logger.Args(SessionID, (ex.InnerException ?? ex).ToString()));
                         return Directive.Stop;
                 }
             }

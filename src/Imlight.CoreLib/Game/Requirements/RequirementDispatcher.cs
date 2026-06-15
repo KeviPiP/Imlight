@@ -42,6 +42,7 @@
  */
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -57,6 +58,11 @@ namespace Imlight.CoreLib.Game.Requirements;
 public static class RequirementDispatcher {
 
     private static readonly Dictionary<Type, MethodInfo> s_requirementHandlers = [];
+
+    // Requirement types we've already warned about having no handler. Requirements are
+    // re-evaluated continuously (e.g. quest-offer checks roughly once per second per NPC),
+    // so we log each unhandled type only once to avoid flooding the log.
+    private static readonly ConcurrentDictionary<string, byte> s_warnedMissingHandlers = new();
 
     // ctor
     static RequirementDispatcher()
@@ -123,8 +129,15 @@ public static class RequirementDispatcher {
         var handlerType = FindHandlerForRequirement(requirementType, context);
 
         if (handlerType == null) {
-            Logger.Warning("No handler found for requirement type: {0}",
-                Logger.Args(requirementType.Name));
+            // Dump the requirement's full contents (it's a generated record, so ToString
+            // prints every property) along with the context it was evaluated in, so an
+            // unhandled requirement tells us exactly what was being asked. Logged once per
+            // type, since requirements are re-evaluated continuously.
+            if (s_warnedMissingHandlers.TryAdd(requirementType.Name, 0)) {
+                Logger.Warning("No handler found for requirement type: {0} | requirement: {1} | context: {2} " +
+                    "(further occurrences suppressed)",
+                    Logger.Args(requirementType.Name, requirement, DescribeContext(context)));
+            }
 
             return false;
         }
@@ -172,6 +185,40 @@ public static class RequirementDispatcher {
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Builds a short, human-readable description of the context a requirement was
+    /// evaluated in (the quest / goal / trigger it belongs to, and who it was checked
+    /// against), for diagnostic logging.
+    /// </summary>
+    private static string DescribeContext(IRequirementContext context) {
+        if (context == null) {
+            return "<none>";
+        }
+
+        var parts = new List<string>();
+        var questName = context.GetQuestName();
+        if (!string.IsNullOrEmpty(questName)) {
+            parts.Add($"quest={questName}");
+        }
+
+        var goalName = context.GetGoalName();
+        if (!string.IsNullOrEmpty(goalName)) {
+            parts.Add($"goal={goalName}");
+        }
+
+        var triggerName = context.GetTriggerName();
+        if (!string.IsNullOrEmpty(triggerName)) {
+            parts.Add($"trigger={triggerName}");
+        }
+
+        var charId = context.GetWizard()?.CharId;
+        if (charId is not null) {
+            parts.Add($"char={charId}");
+        }
+
+        return parts.Count == 0 ? context.GetType().Name : string.Join(", ", parts);
     }
 
     private static void RegisterRequirementHandlers() {

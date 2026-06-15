@@ -49,6 +49,7 @@ using Imcodec.MessageLayer.Generated;
 using Imcodec.ObjectProperty;
 using Imcodec.ObjectProperty.TypeCache;
 using Imlight.Common;
+using Imlight.CoreLib.Game.DropTables;
 using Imlight.CoreLib.Shared.Items;
 using Imlight.CoreLib.Shared.Networking;
 using Imlight.CoreLib.Shared.Packets;
@@ -60,6 +61,17 @@ internal class CombatService(SessionActor sessionActor) : MessageService(session
 
     private const uint NO_AGGRO_EFFECT_STRINGID = 1618528611;
     private const uint NO_AGGRO_EFFECT_DURATION_IN_SECONDS = 3;
+
+    // Optional multiplier applied to gold dropped by defeated creatures (default 1.0 = no
+    // change). A future World.ini could override this per-world.
+    private static readonly float s_combatLootGoldMultiplier =
+        ConfigurationManager.GetValue("Combat.CombatLootGoldMultiplier", 1.0f);
+
+    // Fallback gold range (min-max, inclusive) dropped when the defeated creatures have no
+    // usable loot table (no table, a table missing from SpiralDB, or an empty stub), so a kill
+    // is never empty-handed. "0-0" (the default) disables the fallback.
+    private static readonly (int Min, int Max) s_fallbackLootGold =
+        ParseGoldRange(ConfigurationManager.GetValue("Combat.FallbackLootGold", "0-0"));
 
     public ITimerScheduler Timers { get; set; }
 
@@ -128,6 +140,67 @@ internal class CombatService(SessionActor sessionActor) : MessageService(session
             XP = xpGained,
         };
         TellOtherServices(msg);
+
+        // Roll the defeated creatures' drop tables and grant the loot. Done here, on our own
+        // session thread (the wizard is local — no Ask), so the duel actor never blocks.
+        GrantCombatLoot(message.LootTableNames);
+    }
+
+    /// <summary>
+    /// Rolls the drop tables of the creatures defeated in the duel and grants the result to
+    /// this player. XP is excluded (granted separately per used pip). Falls back to a small
+    /// configurable amount of gold when the creatures had no usable loot table.
+    /// </summary>
+    private void GrantCombatLoot(string[] lootTableNames) {
+        var wizard = GetActiveWizard();
+        if (wizard is null) {
+            return;
+        }
+
+        var playerObj = GetActiveGameObject() ?? wizard.GameObject;
+        var rollResults = DropTableRoller.Roll(lootTableNames ?? [], SessionActor.ActorRef, playerObj, wizard);
+
+        // Combat XP is granted separately (per used pip); don't double-award from the table.
+        rollResults.ExperienceAmount = 0;
+
+        // Fallback: if the creatures dropped nothing usable, still award a little gold so a
+        // kill is never empty-handed. Disabled when [Combat] FallbackLootGold is "0-0".
+        var rolledNothing = rollResults.GoldAmount <= 0
+            && rollResults.Items.Count == 0
+            && rollResults.TrainingPoints <= 0
+            && !rollResults.GrantsPotionSlot;
+        if (rolledNothing) {
+            rollResults.GoldAmount = RollFallbackGold();
+        }
+
+        // Apply the optional config-driven gold multiplier to combat drops.
+        if (s_combatLootGoldMultiplier != 1.0f && rollResults.GoldAmount > 0) {
+            rollResults.GoldAmount = (int) Math.Round(rollResults.GoldAmount * s_combatLootGoldMultiplier);
+        }
+
+        LootGranter.Grant(SessionActor.ActorRef, wizard, rollResults);
+    }
+
+    // Parses a "<min>-<max>" gold range; returns (0, 0) (disabled) if malformed.
+    private static (int Min, int Max) ParseGoldRange(string value) {
+        var range = (value ?? string.Empty).Split('-');
+        if (range.Length == 2
+            && int.TryParse(range[0].Trim(), out var min)
+            && int.TryParse(range[1].Trim(), out var max)
+            && min >= 0 && max >= min) {
+            return (min, max);
+        }
+
+        return (0, 0);
+    }
+
+    private static int RollFallbackGold() {
+        var (min, max) = s_fallbackLootGold;
+        if (max <= 0) {
+            return 0;
+        }
+
+        return Random.Shared.Next(min, max + 1);
     }
 
     [MessageHandler(typeof(DOODLEDOUG_MESSAGES_51_PROTOCOL.MSG_COMBATDRAW))]

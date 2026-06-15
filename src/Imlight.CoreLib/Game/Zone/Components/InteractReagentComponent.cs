@@ -56,10 +56,22 @@ namespace Imlight.CoreLib.Game.Zone.Components;
 internal sealed class InteractReagentComponent(ZoneEntity entity)
     : ZoneEntityComponent(entity), IServiceComponent, IComponentFactory {
 
-    private const float RARE_REAGENT_CHANCE = 0.1f;
-    private const float INITIAL_ADDITIONAL_REAGENT_CHANCE = 0.1f;
-    private const float ADDITIONAL_REAGENT_CHANCE_REDUCTION = 0.5f;
-    private const int MAX_ADDITIONAL_REAGENT_ROLLS = 5;
+    // Reagent harvest drop rates are configurable via the [Reagents] section of
+    // Imlight.ini. Quantity is rolled as an ordered ladder: start at BaseQuantity, then
+    // try to upgrade to each higher tier in turn, stopping at the first failed roll.
+    // s_qtyStepChances[i] is the chance to reach quantity (i + 2).
+    private static readonly int s_baseQuantity =
+        System.Math.Max(1, ConfigurationManager.GetValue("Reagents.BaseQuantity", 1));
+    private static readonly float s_rareChance =
+        ConfigurationManager.GetValue("Reagents.RareReagentChance", 0.10f);
+    private static readonly float[] s_qtyStepChances = [
+        ConfigurationManager.GetValue("Reagents.ChanceForQty2", 0.10f),
+        ConfigurationManager.GetValue("Reagents.ChanceForQty3", 0.05f),
+        ConfigurationManager.GetValue("Reagents.ChanceForQty4", 0.03f),
+        ConfigurationManager.GetValue("Reagents.ChanceForQty5", 0.015f),
+        ConfigurationManager.GetValue("Reagents.ChanceForQty6", 0.005f),
+    ];
+
     private const uint PICKUP_SOUND_TEMPLATE_ID = 1309960781;
     private const uint RARE_PICKUP_SOUND_TEMPLATE_ID = 1051090169;
 
@@ -67,15 +79,25 @@ internal sealed class InteractReagentComponent(ZoneEntity entity)
     public string NpcIcon {
         get {
             // todo: Not all icons come from shared worlddata.
-            var goTemplate = Entity.Template as GameObjectTemplate;
+            if (Entity.Template is not GameObjectTemplate goTemplate) {
+                return string.Empty;
+            }
+
             return $"|_Shared|WorldData|{goTemplate.m_sIcon}";
         }
     }
     public string NpcNameKey {
         get {
-            var goTemplate = Entity.Template as GameObjectTemplate;
+            if (Entity.Template is not GameObjectTemplate goTemplate) {
+                return string.Empty;
+            }
+
+            // The display name is best-effort: if we cannot resolve the reagent
+            // template for this node's object name we must NOT throw, otherwise the
+            // interact-service memento actor crashes and the player never receives
+            // the "Collect Item" option at all.
             var reagentItemTemplate = ReagentFactory.GetReagentTemplate(goTemplate.m_objectName);
-            return reagentItemTemplate.m_displayName;
+            return reagentItemTemplate?.m_displayName ?? string.Empty;
         }
     }
     public string NpcTextKey => "GUI_CollectItem";
@@ -96,17 +118,22 @@ internal sealed class InteractReagentComponent(ZoneEntity entity)
     public static bool ShouldAttachToEntity(CoreTemplate template)
         => template is GameObjectTemplate goTemplate
         && goTemplate.m_adjectiveList is not null
-        && goTemplate.m_adjectiveList.Any(x => x == "Reagent");
+        && goTemplate.m_adjectiveList.Any(x => string.Equals(x, "Reagent", StringComparison.OrdinalIgnoreCase));
 
     public IEnumerable<ServiceOptionBase> GetServiceOptions(Wizard _)
         => [ new InteractableOption { m_serviceName = ServiceName }];
 
     public void OnServiceInteraction(IActorRef playerActor, Wizard playerCharacter, CoreObject playerObject, uint serviceOptionIndex) {
+        var nodeName = (Entity.Template as GameObjectTemplate)?.m_objectName ?? "<?>";
+        Logger.Debug("Reagent interaction: node '{0}', char {1}.", Logger.Args(nodeName, playerCharacter.CharId));
+
         var quantity = RollReagentQuantity();
         var reagent = GetReagent(playerCharacter.CharId, quantity);
         if (reagent is null) {
-            Logger.Error("Failed to get reagent for character {0} and quantity {1}",
-                Logger.Args(playerCharacter.CharId, quantity));
+            var objectName = (Entity.Template as GameObjectTemplate)?.m_objectName ?? "<unknown>";
+            Logger.Error("Failed to resolve a reagent for node '{0}' (character {1}, quantity {2}). " +
+                "No reagent template matched the harvest heuristic for this object name.",
+                Logger.Args(objectName, playerCharacter.CharId, quantity));
 
             return;
         }
@@ -250,17 +277,21 @@ internal sealed class InteractReagentComponent(ZoneEntity entity)
     }
 
     private static bool IsRareReagent()
-        => s_random.NextDouble() < RARE_REAGENT_CHANCE;
+        => s_random.NextDouble() < s_rareChance;
 
     private static int RollReagentQuantity() {
-        var quantity = 1;
-        var currentChance = INITIAL_ADDITIONAL_REAGENT_CHANCE;
-        var rollCount = 0;
+        var quantity = s_baseQuantity;
 
-        while (s_random.NextDouble() < currentChance && rollCount < MAX_ADDITIONAL_REAGENT_ROLLS) {
-            quantity++;
-            currentChance *= ADDITIONAL_REAGENT_CHANCE_REDUCTION;
-            rollCount++;
+        // Try to upgrade to each higher quantity tier in order, stopping at the first
+        // failed roll. s_qtyStepChances[tier - 2] is the chance to reach that tier.
+        var maxTier = s_qtyStepChances.Length + 1;
+        for (var tier = quantity + 1; tier <= maxTier; tier++) {
+            if (s_random.NextDouble() < s_qtyStepChances[tier - 2]) {
+                quantity = tier;
+            }
+            else {
+                break;
+            }
         }
 
         return quantity;

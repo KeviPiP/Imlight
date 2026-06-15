@@ -175,9 +175,16 @@ internal sealed class InteractServiceMementoComponent(ZoneEntity entity)
             SendActorServiceOptions(playerActor, reinteract);
         }
 
-        // Find the service component that corresponds to the service name.
-        // If the service component is not found, log a warning and return.
-        var serviceComponent = _serviceComponents.FirstOrDefault(c => c.ServiceName == serviceName);
+        // Find the service component that corresponds to the service name. Multiple
+        // components can share one service name (e.g. a reagent node or chest that also
+        // carries a WizardSelectBehavior additionally gets InteractQuestSelectComponent,
+        // all named "Interact"). Dispatch to the component that actually presents an
+        // interaction option to THIS player — otherwise InteractQuestSelectComponent
+        // (which offers nothing unless a matching scavenge goal is active) shadows the
+        // reagent/chest handler via FirstOrDefault and the interaction silently does nothing.
+        var candidates = _serviceComponents.Where(c => c.ServiceName == serviceName).ToList();
+        var serviceComponent = candidates.FirstOrDefault(c => c.GetServiceOptions(playerCharacter).Any())
+                               ?? candidates.FirstOrDefault();
         if (serviceComponent == null) {
             Logger.Warning("Service component not found for NPC {0} with service name {1}",
                 Logger.Args(Entity.ActiveGameObject.m_debugName, serviceName));
@@ -185,8 +192,22 @@ internal sealed class InteractServiceMementoComponent(ZoneEntity entity)
             return;
         }
 
-        // Call the service component's interaction method.
-        serviceComponent.OnServiceInteraction(playerActor, playerCharacter, playerObject, serviceIndex);
+        // DEBUG: identify exactly which component handles this interaction.
+        Logger.Debug("Interaction dispatch: NPC {0} -> {1} (service '{2}', index {3}, components: [{4}]).",
+            Logger.Args(Entity.ActiveGameObject.m_debugName, serviceComponent.GetType().Name, serviceName,
+                serviceIndex, string.Join(", ", _serviceComponents.Select(c => c.GetType().Name))));
+
+        // Call the service component's interaction method. Wrap it so a throwing handler
+        // (e.g. a serialization failure) surfaces in the log instead of being silently
+        // swallowed by the actor — otherwise the interaction just appears to do nothing.
+        try {
+            serviceComponent.OnServiceInteraction(playerActor, playerCharacter, playerObject, serviceIndex);
+        }
+        catch (Exception ex) {
+            Logger.Error("Service component '{0}' ({1}) threw during interaction with NPC {2}: {3}",
+                Logger.Args(serviceName, serviceComponent.GetType().Name,
+                    Entity.ActiveGameObject.m_debugName, ex));
+        }
     }
 
     [MessageHandler(typeof(ZONE_102_PROTOCOL.MSG_WIZBANGUPDATEINTERVAL))]
