@@ -72,7 +72,11 @@ public abstract class Server : ReceiveProtocolDispatcher {
         this._serverStartTime = DateTimeOffset.Now.ToUnixTimeSeconds();
         this._factoryProps = factoryProps;
 
-        // Use provided IP if set, otherwise auto-detect.
+        // The address the client uses to reach this server (sent during the
+        // login->game handoff). The config override (Game Server.GameServerIP,
+        // passed in here as `ip`) wins so LAN/local play works — the auto-detected
+        // PUBLIC IP is unreachable from a LAN client (NAT hairpinning), which
+        // manifests as the client failing to enter the world.
         if (!string.IsNullOrWhiteSpace(ip)) {
             this.Ip = ip;
         }

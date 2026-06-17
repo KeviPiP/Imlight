@@ -119,7 +119,7 @@ public class Wizard : IDisposable {
         1317234,
 
         // Weapons, each of different animation
-        87256,   // Antiquated Wand (starting wand)
+        1475826, // Wand of the Seven Schools (starter wand, equipped on first login)
         1456120, // Celebration Staff
 
         126412, // Black Cat Pet

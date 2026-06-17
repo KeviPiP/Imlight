@@ -229,13 +229,17 @@ internal sealed class WoodenChestComponent(ZoneEntity entity) : ZoneEntityCompon
     }
 
     private static void UpdateGold(IActorRef playerActor, Wizard playerCharacter, int goldAmount) {
+        // Add first, then report the running TOTAL — the client treats MSG_UPDATEGOLD.Gold as
+        // the wizard's new total balance (confirmed in the packet dump), not the amount gained.
+        // Sending the delta here made the character UI show only the last gold picked up.
+        playerCharacter.AddGold(goldAmount);
+
         var updateGold = new WIZARD_12_PROTOCOL.MSG_UPDATEGOLD {
-            Gold = goldAmount,
+            Gold = playerCharacter.GameStats.m_currentGold,
             MaxGold = playerCharacter.GameStats.m_baseGoldPouch
         };
 
         playerActor.Tell(updateGold);
-        playerCharacter.AddGold(goldAmount);
     }
 
     private static void PlaySound(IActorRef playerActor) {
