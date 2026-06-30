@@ -25,6 +25,7 @@ using Imlight.Common;
 using Imlight.CoreLib.Game.DropTables;
 using Imlight.CoreLib.Game.Madlibs;
 using Imlight.CoreLib.Shared.Packets;
+using Imlight.CoreLib.Shared.Resources;
 using Imlight.CoreLib.WizardData.Collections;
 using Imlight.CoreLib.WizardData.Models.Player;
 
@@ -59,6 +60,44 @@ internal class CommandQuest : CommandProtocol {
         SendQuestOfferCacheOption(quest);
     }
 
+    [Command("remove")]
+    [AuthRequired(AuthLevel.QualityAssurance)]
+    private void removeQuest(string questName) {
+        var wizard = Context.Character;
+
+        // Check if the quest exists.
+        var questTemplate = QuestTemplateCollection.GetQuestByName(questName);
+        if (questTemplate == null) {
+            InformSenderClient($"Quest '{questName}' does not exist.");
+            return;
+        }
+
+        // Check if player already has this quest.
+        if (!wizard.HasQuest(questName)) {
+            InformSenderClient($"You don't have the quest '{questName}'.");
+            return;
+        }
+
+        // get quest instance before removing so we can send removequest msg
+        var qInstance = wizard.QuestBehavior.CurrentQuestInstances
+            .FirstOrDefault(quest => quest.QuestName == questName);
+        if (qInstance == null) {
+            InformSenderClient($"Tried to remove a quest instance that does not exist");
+            return;
+        }
+
+        // remove the quest
+        wizard.RemoveQuest(questName);
+
+        // inform the client we have removed the quest!
+        var removeQstMsg = new QUEST_MESSAGES_52_PROTOCOL.MSG_REMOVEQUEST {
+            QuestID = qInstance.ID
+        };
+
+        Context.SessionActor.Tell(removeQstMsg);
+
+        InformSenderClient($"Quest: '{questName}' successfully removed! Re-login if quest still appears");
+    }
     private void ShowQuestInfoDialog(QuestTemplate quest) {
         var dialogList = quest.m_dialogList as ActorDialogList;
         var prepDialogList = dialogList?.m_dialogs.FirstOrDefault(de => de.m_dialogTag == "Prep");
