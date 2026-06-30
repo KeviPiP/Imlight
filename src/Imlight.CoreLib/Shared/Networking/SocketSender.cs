@@ -59,11 +59,13 @@ internal sealed class SocketSender : ReceiveActor, IDisposable {
             typeof(GAME_5_PROTOCOL.MSG_REMOVEOBJECT),
             typeof(GAME_5_PROTOCOL.MSG_MOVESTATE),
             typeof(LOGIN_7_PROTOCOL.MSG_LOGIN_NOT_AFK),
+            typeof(GAME_5_PROTOCOL.MSG_ADDOBJECT),
             typeof(ControlMessageProtocol.KeepAlive),
             typeof(ControlMessageProtocol.KeepAliveResponse)
         };
     private bool _isDisposed;
     private bool _isSending;
+    private static readonly bool s_logSentPackets = ConfigurationManager.GetValue("Debug.LogSentPackets", false);
 
     // ctor
     public SocketSender(IActorRef sessionActor, Socket socket, ushort sessionid) {
@@ -118,8 +120,9 @@ internal sealed class SocketSender : ReceiveActor, IDisposable {
         finally {
             _isSending = false;
         }
-
-        LogSentPacket(message);
+        if (s_logSentPackets) {
+            LogSentPacket(message);
+        }
     }
 
     private void LogSentPacket(IMessage packet) {

@@ -73,6 +73,7 @@ internal sealed class SocketListener : ReceiveActor, IDisposable {
             typeof(ControlMessageProtocol.KeepAliveResponse)
         ];
     private bool _isDisposed;
+    private static readonly bool s_logRecievedPackets = ConfigurationManager.GetValue("Debug.LogRecievedPackets", false);
 
     // ctor
     public SocketListener(IActorRef sessionActor, Socket socket, ushort sessionid) {
@@ -153,7 +154,9 @@ internal sealed class SocketListener : ReceiveActor, IDisposable {
             }
 
             foreach (var packet in packets) {
-                LogReceivedPacket(packet);
+                if (s_logRecievedPackets) {
+                    LogReceivedPacket(packet);
+                }
 
                 var msgPacket = new SERVER_100_PROTOCOL.MSG_RECEIVEDPACKET { Packet = packet };
                 _sessionActorRef.Tell(msgPacket);
