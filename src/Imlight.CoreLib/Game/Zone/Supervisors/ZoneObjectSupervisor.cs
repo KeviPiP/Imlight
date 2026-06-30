@@ -69,6 +69,8 @@ internal sealed class ZoneObjectSupervisor(Core.Zone zone) : ZoneEntitySuperviso
             if (IsCriticalObject(template)) {
                 RegisterCriticalObject(coreObject.m_globalID);
             }
+            var englishName = string.IsNullOrEmpty(template.m_displayName) ? template.m_displayName : Locale.GetEnglishName(template.m_displayName);
+            Logger.Debug("TemplateID: {0}, objectName: {1}, displayName: {2}, localeName: {3}, adjectiveList: {4}", Logger.Args(template.m_templateID, template.m_objectName, template.m_displayName, englishName, string.Join(",", template.m_adjectiveList)));
 
             var objectActor = CreateEntityActor(coreObject, template, objectInfo);
         }
