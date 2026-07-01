@@ -32,7 +32,9 @@ using Imcodec.MessageLayer.Generated;
 using Imcodec.ObjectProperty;
 using Imcodec.ObjectProperty.TypeCache;
 using Imlight.Common;
+using Imlight.CoreLib.Game.Spells;
 using Imlight.CoreLib.Shared.Packets;
+using Imlight.CoreLib.Shared.Resources;
 using Imlight.CoreLib.WizardData.Collections;
 using Imlight.CoreLib.WizardData.Models.Player;
 using Imlight.CoreLib.WizardData.Models.World;
@@ -58,10 +60,48 @@ public static class LootGranter {
         UpdateWizardTP(playerActor, wizard, rollResults.TrainingPoints);
         UpdateCharacterItems(wizard, rollResults.Items);
         GiveTreasureCards(playerActor, wizard, rollResults.TreasureCards);
+        AddNewSpells(playerActor, wizard, rollResults.SpellCards);
         SendLootInfoToClient(playerActor, rollResults, wizard);
 
         if (rollResults.GrantsPotionSlot) {
             UpdateWizardPotionMax(playerActor, wizard);
+        }
+    }
+
+    private static void AddNewSpells(IActorRef playerActor, Wizard wizard, List<DropSpellCardResult> spellCards) {
+        if (spellCards is null || spellCards.Count == 0) {
+            return;
+        }
+
+        // Add each spell to the wizard's spellbook.
+        foreach (var spellCard in spellCards) {
+            if (!ulong.TryParse(spellCard.SpellTemplateID, out var spellCardID)) {
+                continue;
+            }
+
+            var spell = SpellFactory.GetSpell((uint) spellCardID);
+
+            var spellLearnedSuccess = wizard.LearnSpell(spell);
+            if (!spellLearnedSuccess) {
+                Logger.Error("Wizard {0} attempted to train spell {1} but failed to learn it.",
+                    Logger.Args(wizard.PlayerNameBehavior.GetWizardName(), spellCardID));
+
+                continue;
+            }
+
+            // send message to client saying to add the spell to their book
+            var addSpellMsg = new WIZARD_12_PROTOCOL.MSG_ADDSPELLTOBOOK() {
+                SpellID = (int) spellCardID
+            };
+            playerActor.Tell(addSpellMsg);
+
+            // send message to client saying we completed training woo!
+            var trainCompleteMsg = new WIZARD_12_PROTOCOL.MSG_SPELLTRAINCOMPLETE() {
+                SpellID = spellCardID,
+                DisplayText = "GUI_00000902",
+                Success = 1
+            };
+            playerActor.Tell(trainCompleteMsg);
         }
     }
 
@@ -70,7 +110,7 @@ public static class LootGranter {
             return;
         }
 
-        // Add each item to the wizard's inventory.
+        // Add each treasure card to the wizard's inventory.
         foreach (var treasureCard in treasureCards) {
             if (!ulong.TryParse(treasureCard.SpellID, out var treasureCardID)) {
                 continue;
@@ -177,7 +217,9 @@ public static class LootGranter {
 
     private static void SendLootInfoToClient(IActorRef playerActor, DropTableResult results, Wizard wizard) {
         // Inform the game client of the loot results.
-        if (results.Items.Count == 0 && results.TreasureCards.Count == 0) {
+        if (results.Items.Count == 0
+            && results.TreasureCards.Count == 0
+            && results.SpellCards.Count == 0) {
             return;
         }
 

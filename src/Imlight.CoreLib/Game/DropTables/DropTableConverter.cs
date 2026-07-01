@@ -100,18 +100,18 @@ public static class DropTableConverter {
             }
         }
 
-        // * TODO Convert add spell card rewards
-        //foreach (var spellCardResult in dropResult.TreasureCards) {
-        //    if (!string.IsNullOrEmpty(spellCardResult.SpellID)) {
-        //        if (TryParseSpellId(spellCardResult.SpellID, out var spellGid)) {
-        //            lootItems.Add(new AddSpellLootInfo {
-        //                m_lootType = LOOT_TYPE.LOOT_TYPE_ADD_SPELL,
-        //                m_spellID = spellGid,
-        //                m_spellName = spellCardResult.SpellName
-        //            });
-        //        }
-        //    }
-        //}
+//      *TODO Convert add spell card rewards
+        foreach (var spellCardResult in dropResult.SpellCards) {
+            if (!string.IsNullOrEmpty(spellCardResult.SpellTemplateID)) {
+                if (TryParseSpellId(spellCardResult.SpellTemplateID, out var spellGid)) {
+                    lootItems.Add(new AddSpellLootInfo {
+                        m_lootType = LOOT_TYPE.LOOT_TYPE_ADD_SPELL,
+                        m_spellID = spellGid,
+                        m_spellName = spellCardResult.SpellName
+                    });
+                }
+            }
+        }
 
 
         lootList.m_loot = lootItems;

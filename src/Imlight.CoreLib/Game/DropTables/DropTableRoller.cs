@@ -61,7 +61,8 @@ public static class DropTableRoller {
             TrainingPoints = 0,
             GrantsPotionSlot = false,
             Items = [],
-            TreasureCards = []
+            TreasureCards = [],
+            SpellCards = []
         };
 
         // Roll each drop table.
@@ -89,6 +90,7 @@ public static class DropTableRoller {
             combinedResult.Items.AddRange(tableResult.Items);
             combinedResult.GrantsPotionSlot = tableResult.GrantsPotionSlot;
             combinedResult.TreasureCards.AddRange(tableResult.TreasureCards);
+            combinedResult.SpellCards.AddRange(tableResult.SpellCards);
 
         }
 
@@ -123,6 +125,7 @@ public static class DropTableRoller {
         // Roll items with requirements validation.
         result.Items = RollTableItems(dropTable, playerRef, playerObj, wizard, random);
         result.TreasureCards = RollTableTreasureCards(dropTable, playerRef, playerObj, wizard, random);
+        result.SpellCards = RollTableSpellCards(dropTable, playerRef, playerObj, wizard, random);
             
         return result;
     }
@@ -194,6 +197,55 @@ public static class DropTableRoller {
 
         return results;
     }
+    private static List<DropSpellCardResult> RollTableSpellCards(DropTable dropTable, IActorRef playerRef, CoreObject playerObj, Wizard wizard, Random random) {
+
+        var results = new List<DropSpellCardResult>();
+        if (dropTable.SpellCards == null || dropTable.SpellCards.Count == 0) {
+            return results;
+        }
+
+        // Create a working copy of items to roll from.
+        var availableSpellCards = dropTable.SpellCards
+            .Where(spellCard => !string.IsNullOrEmpty(spellCard.SpellTemplateID))
+            .ToList();
+
+        // Keep rolling until we find an item that meets requirements or run out of items.
+        while (availableSpellCards.Count > 0) {
+            // Randomly select an item from the remaining pool.
+            var randomIndex = random.Next(availableSpellCards.Count);
+            var selectedSpellCard = availableSpellCards[randomIndex];
+
+            // Check if this item meets requirements.
+            bool meetsRequirements = true;
+            if (selectedSpellCard.Requirements != null) {
+                var context = new GenericRequirementContext(
+                    requirements: selectedSpellCard.Requirements,
+                    playerRef: playerRef,
+                    playerObj: playerObj,
+                    wizard: wizard
+                );
+
+                meetsRequirements = RequirementDispatcher.EvaluateRequirements(selectedSpellCard.Requirements, context);
+            }
+
+            if (meetsRequirements) {
+                // Found a valid item, add it to results and stop rolling.
+                results.Add(new DropSpellCardResult {
+                    Quantity = 1,
+                    SpellTemplateID = selectedSpellCard.SpellTemplateID,
+                    SpellName = selectedSpellCard.SpellName
+                });
+
+                break;
+            }
+            else {
+                // Treasure cards doesn't meet requirements, remove it from the pool and try again.
+                availableSpellCards.RemoveAt(randomIndex);
+            }
+        }
+
+        return results;
+    }
 
     private static List<DropItemResult> RollTableItems(DropTable dropTable, IActorRef playerRef, CoreObject playerObj, Wizard wizard, Random random) {
         
@@ -253,6 +305,7 @@ public static class DropTableRoller {
             TrainingPoints = 0,
             Items = [],
             TreasureCards = [],
+            SpellCards = [],
         };
 
 }
