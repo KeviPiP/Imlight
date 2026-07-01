@@ -171,6 +171,9 @@ public sealed class COMBAT_106_PROTOCOL : IServerProtocol {
 
         public int UsedPips;
         public string[] MobAdjectives;
+        // Drop tables of the creatures defeated in this duel. Rolled + granted on the player's
+        // own session (CombatService) so the zone/duel actor never blocks on loot.
+        public string[] LootTableNames;
 
     }
 

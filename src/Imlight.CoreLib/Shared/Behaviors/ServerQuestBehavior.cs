@@ -29,7 +29,11 @@ public class ServerQuestBehavior : IClientBehaviorProvider<ServerQuestBehavior> 
 
     [JsonIgnore] public bool NoTransfer { get; set; } = true;
 
-    public readonly Dictionary<string, ulong> Registry = [];
+    // In-memory registry of named flags / counters. NOT embedded in the wizard document:
+    // it is persisted separately in the WizardRegistry collection (keyed by character id) and
+    // hydrated on load, so it round-trips reliably and flag writes don't rewrite the whole
+    // character document.
+    [JsonIgnore] public Dictionary<string, ulong> Registry { get; set; } = [];
 
     // In database, only store the quest IDs to reduce storage size.
     // The quest instances are loaded from the quest instance database on demand.

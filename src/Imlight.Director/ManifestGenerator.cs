@@ -132,7 +132,7 @@ internal class ManifestGenerator {
     private void WriteNpc(ulong id, WizGameObjectTemplate template, WizClientObject obj) {
         // If this NPC is a shopkeeper, add them to the shopkeeper manifest instead.
         var npcName = template.m_objectName.ToString().ToLower();
-        var debugName = obj.m_debugName.ToString().ToLower();
+        var debugName = obj.m_debugName?.ToString()?.ToLower();
         if (s_shopKeeperNameGiveaways.Any(npcName.Contains) || s_explorerNames.Any(n => debugName == n)) {
             WriteShopkeeper(id, template, obj);
             return;
@@ -146,7 +146,7 @@ internal class ManifestGenerator {
         }
 
         var paddedId = id.ToString();
-        var name = obj.m_debugName == "" ? template.m_objectName : obj.m_debugName;
+        var name = obj.m_debugName == null ? template.m_objectName : obj.m_debugName;
         paddedId = paddedId.ToString().PadRight(20, ' ');
 
         _npcManifest.WriteLine($"{paddedId} | {name}");
@@ -154,7 +154,7 @@ internal class ManifestGenerator {
 
     private void WriteShopkeeper(ulong id, WizGameObjectTemplate template, WizClientObject obj) {
         var paddedId = id.ToString();
-        var name = obj.m_debugName == "" ? template.m_objectName : obj.m_debugName;
+        var name = obj.m_debugName == null ? template.m_objectName : obj.m_debugName;
         paddedId = paddedId.ToString().PadRight(20, ' ');
 
         _shopkeeperManifest.WriteLine($"{paddedId} | {name}");
@@ -162,7 +162,7 @@ internal class ManifestGenerator {
 
     private void WriteCreature(ulong id, WizGameObjectTemplate template, WizClientObject obj) {
         var paddedId = id.ToString();
-        var name = obj.m_debugName == "" ? template.m_objectName : obj.m_debugName;
+        var name = obj.m_debugName == null ? template.m_objectName : obj.m_debugName;
         paddedId = paddedId.ToString().PadRight(20, ' ');
 
         _creatureManifest.WriteLine($"{paddedId} | {name}");
@@ -211,7 +211,7 @@ internal class ManifestGenerator {
 
     private void WriteItem(ulong id, WizItemTemplate template, WizClientObjectItem item) {
         var paddedId = id.ToString();
-        var itemName = item.m_debugName == "" ? template.m_objectName : item.m_debugName;
+        var itemName = item.m_debugName == null ? template.m_objectName : item.m_debugName;
         var school = template.m_school == "" ? "NoSchool" : template.m_school.ToString();
 
         // Ensure that `school` is 8 characters. replace any missing with a space.

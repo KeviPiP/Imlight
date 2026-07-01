@@ -17,54 +17,50 @@
  */
 
 using System;
-using System.Collections.Generic;
 using Akka.Actor;
 using Imcodec.MessageLayer.Generated;
 using Imcodec.ObjectProperty;
 using Imcodec.ObjectProperty.TypeCache;
 using Imlight.Common;
-using Imlight.CoreLib.Game.DropTables;
 using Imlight.CoreLib.Shared.Packets;
-using Imlight.CoreLib.WizardData.Models.Player;
-using Imlight.CoreLib.WizardData.Models.World;
 
 namespace Imlight.CoreLib.Game.Results.Handlers;
 
-internal sealed class ResDropTableHandler : BaseResultHandler<ResDropTable> {
+/// <summary>
+/// Handler for ResDrawHand — instructs the client to (re)draw the player's combat hand.
+/// Paired with ResGiveSpell in scripted duels (the tutorial combat); after the scripted
+/// cards have been handed out, this pushes the current hand so the client renders it.
+/// </summary>
+internal sealed class ResDrawHandHandler : BaseResultHandler<ResDrawHand> {
 
+    private readonly ObjectSerializer _serializer = new(Versionable: false);
+    private readonly PropertyFlags _combatParticipantHandFlags = (PropertyFlags) 5;
     private const float QUERY_WIZARD_TIMEOUT_SECONDS = 5.0f;
-    private const uint LOOT_LIST_SERIALIZATION_FLAGS = 4;
 
     public override bool Execute(IResultContext context) {
-        // Context does not ship with a wizard reference, so we need to query for it.
+        // The context doesn't carry a wizard reference, so query the player's session for it.
         var queryWizardMsg = new CHARACTER_103_PROTOCOL.MSG_QUERYACTIVEWIZARD();
         var queryTimeout = TimeSpan.FromSeconds(QUERY_WIZARD_TIMEOUT_SECONDS);
         var queryResponse = context
             .GetPlayerRef()
             .Ask<CHARACTER_103_PROTOCOL.MSG_CHARACTER>(queryWizardMsg, queryTimeout).Result;
-        if (queryResponse == null) {
-            Logger.Error("Handler failed to retrieve character data within {0} seconds.",
+        if (queryResponse?.Wizard is null) {
+            Logger.Error("ResDrawHand handler failed to retrieve character data within {0} seconds.",
                 Logger.Args(QUERY_WIZARD_TIMEOUT_SECONDS));
 
-            return false;
+            // Scripted relay: never stall the tutorial flow on a transient query miss.
+            return true;
         }
+
         var wizard = queryResponse.Wizard;
-        if (wizard == null) {
-            Logger.Error("Handler retrieved character data reply, but wizard was null after {0} seconds.",
-                Logger.Args(QUERY_WIZARD_TIMEOUT_SECONDS));
-
-            return false;
-        }
-
-        // The drop table doesn't really mean anything yet. It's just a template.
-        // We need to actually "roll" it.
-        var rollResults = DropTableRoller.Roll([Result.m_tableName],
-                                               context.GetPlayerRef(),
-                                               context.GetPlayerObj(),
-                                               wizard);
-
-        // Apply the rolled loot to the wizard and inform their game client.
-        LootGranter.Grant(context.GetPlayerRef(), wizard, rollResults);
+        var hand = new Hand {
+            m_spellList = wizard.SpellbookBehavior.TemporarySpells
+        };
+        _serializer.Serialize(hand, _combatParticipantHandFlags, out var buffer);
+        context.GetPlayerRef().Tell(new DOODLEDOUG_MESSAGES_51_PROTOCOL.MSG_COMBATHAND {
+            ParticipantID = context.GetPlayerObj().m_globalID,
+            HandData = buffer
+        });
 
         return true;
     }

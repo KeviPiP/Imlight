@@ -116,6 +116,28 @@ internal class SpellFactory : RootDirectoryResourceSingleton<SpellFactory>, IMem
     }
 
     /// <summary>
+    /// Creates a spell from its spell ID — the hash of the spell's name, which is how
+    /// scripted results (e.g. ResGiveSpell in the tutorial duel) and combat hands refer
+    /// to a spell. This is the same key the template cache is built on, so it's a direct
+    /// lookup rather than a template-type check.
+    /// </summary>
+    /// <param name="spellId">The spell ID (name hash) of the spell.</param>
+    /// <returns>The created spell object, or null if no such spell is loaded.</returns>
+    internal static Spell GetSpellBySpellId(uint spellId) {
+        if (!s_spellTemplates.TryGetValue(spellId, out var spellTemplate)) {
+            return null;
+        }
+
+        var spellTemplateActualPath = s_spellTemplatePaths[spellId];
+        var templateId = CoreObjectFactory.GetCoreTemplateID(x => x.m_filename == spellTemplateActualPath);
+        if (templateId == 0) {
+            return null;
+        }
+
+        return GetSpell(spellTemplate, templateId);
+    }
+
+    /// <summary>
     /// Creates a spell from a template ID.
     /// </summary>
     /// <param name="templateId">The ID of the spell template.</param>

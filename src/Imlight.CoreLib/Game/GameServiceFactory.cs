@@ -74,6 +74,8 @@ public class GameServiceFactory : ServiceFactory {
         typeof(QuestService),
         typeof(PotionService),
         typeof(TreasureShopService),
+        typeof(CraftingService),
+        typeof(DebugService)
     ];
 
     public static Props Props() 

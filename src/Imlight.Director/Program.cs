@@ -47,6 +47,7 @@ using System.Globalization;
 using System.IO;
 using Akka.Actor;
 using Imlight.Common;
+using Imlight.CoreLib.Game.Recipes;
 using Imlight.CoreLib.Login;
 using Imlight.CoreLib.Patch;
 using Imlight.CoreLib.Shared.Packets;
@@ -137,6 +138,13 @@ internal static class Program {
         Logger.Information("Director is now explicitly loading resources..");
         var resourceContainer = new ResourceContainer();
         Logger.Information("Director has called all resources to load.");
+
+        // Recipe templates live in the separate Recipes-WorldData.wad archive (not referenced
+        // by Root.wad's TemplateManifest), so they are loaded explicitly here alongside the
+        // Root.wad load. RecipeFactory.Initialize guards against the recipe wad being unavailable
+        // and will never crash boot.
+        RecipeFactory.Initialize();
+
         stopwatch.Stop();
         Logger.Information($"Resource loading completed in {0} ms.",
             Logger.Args(stopwatch.ElapsedMilliseconds));

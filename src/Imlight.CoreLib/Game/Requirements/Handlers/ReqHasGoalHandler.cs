@@ -18,9 +18,14 @@
 
 using System.Linq;
 using Imcodec.ObjectProperty.TypeCache;
+using Imlight.CoreLib.WizardData.Models.Player;
 
 namespace Imlight.CoreLib.Game.Requirements.Handlers;
 
+/// <summary>
+/// Handler for the ReqHasGoal requirement - checks whether the player has a specific
+/// quest goal, optionally constrained to a completion status (complete / incomplete).
+/// </summary>
 internal sealed class ReqHasGoalHandler : BaseRequirementHandler<ReqHasGoal> {
 
     public override bool Evaluate(IRequirementContext context) {
@@ -57,6 +62,17 @@ internal sealed class ReqHasGoalHandler : BaseRequirementHandler<ReqHasGoal> {
             GoalStatusRequirement.Incomplete => goal.DoesPlayerHaveGoal() && !goal.IsGoalCompleted(),
             _ => false
         };
+    }
+
+    private static GoalInstance FindGoal(Wizard wizard, string questName, string goalName) {
+        var quests = wizard.QuestBehavior.CurrentQuestInstances.AsEnumerable();
+        if (!string.IsNullOrEmpty(questName)) {
+            quests = quests.Where(q => q.QuestName == questName);
+        }
+
+        return quests
+            .SelectMany(q => q.GoalProgress)
+            .FirstOrDefault(g => g.GoalName == goalName);
     }
 
 }

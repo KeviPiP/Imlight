@@ -1010,6 +1010,7 @@ internal sealed class CombatDuelComponent(ZoneEntity entity)
         SendCombatPhase((byte) Duel.m_duelPhase);
 
         var adjectivesOfDefeatedMobs = new List<string>();
+        var defeatedLootTables = new List<string>();
         EnactActionOnSubCircles(circle => {
             if (circle.OccupiedTeam == CombatTeam.Monster) {
                 var mobTemplateId = circle.ParticipantObject.m_templateID;
@@ -1023,11 +1024,21 @@ internal sealed class CombatDuelComponent(ZoneEntity entity)
                 }
 
                 var mobAdjectives = gameObjectTemplate.m_adjectiveList;
-                adjectivesOfDefeatedMobs.AddRange(mobAdjectives);
+                if (mobAdjectives is not null) {
+                    adjectivesOfDefeatedMobs.AddRange(mobAdjectives);
+                }
+
+                // Each creature references its drop table(s) by name on its template; the
+                // table contents (gold / xp / items) live in SpiralDB. Collect the tables of
+                // every defeated creature so the winners can roll loot from them below.
+                if (gameObjectTemplate is WizGameObjectTemplate wizTemplate
+                    && wizTemplate.m_lootTable is { Count: > 0 }) {
+                    defeatedLootTables.AddRange(wizTemplate.m_lootTable);
+                }
             }
         });
 
-        // Send the final messages to the participants.
+        // Send the final messages to the participants, and award the rolled loot.
         var combatVictoryMsg = new DOODLEDOUG_MESSAGES_51_PROTOCOL.MSG_COMBATVICTORY();
         EnactActionOnSubCircles(circle => {
             if (circle.OccupiedTeam == CombatTeam.Monster) {
@@ -1039,6 +1050,10 @@ internal sealed class CombatDuelComponent(ZoneEntity entity)
             var victoryMsg = new COMBAT_106_PROTOCOL.MSG_COMBATWIN() {
                 UsedPips = circle._usedPipsForExperienceGain,
                 MobAdjectives = [.. adjectivesOfDefeatedMobs],
+                // Hand the defeated creatures' drop tables to the player's session, which
+                // rolls and grants them. Doing it here would mean blocking the duel actor on
+                // an Ask for the wizard — never block an actor thread.
+                LootTableNames = [.. defeatedLootTables],
             };
             circle.ParticipantActor.Tell(victoryMsg);
         });

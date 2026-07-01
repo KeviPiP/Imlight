@@ -20,10 +20,18 @@ using System;
 using Akka.Actor;
 using Imcodec.ObjectProperty.TypeCache;
 using Imlight.Common;
+using Imlight.CoreLib.Game.Results.Contexts;
 using Imlight.CoreLib.Shared.Packets;
+using Imlight.CoreLib.WizardData.Models.Player;
 
 namespace Imlight.CoreLib.Game.Results.Handlers;
 
+/// <summary>
+/// Handler for ResModifyEntry — writes a value into the player's global or quest registry.
+/// This is the write counterpart to the ReqHasEntry / ReqEntryValue requirements, and backs
+/// one-time / stateful scripting (e.g. a "OnDeathFirstTime" flag set the first time a boss
+/// is defeated).
+/// </summary>
 internal sealed class ResModifyEntryHandler : BaseResultHandler<ResModifyEntry> {
 
     private const float QUERY_WIZARD_TIMEOUT_SECONDS = 5.0f;
@@ -62,14 +70,23 @@ internal sealed class ResModifyEntryHandler : BaseResultHandler<ResModifyEntry> 
         if (Result.m_isQuestRegistry) {
             var questName = Result.m_questName;
             if (string.IsNullOrEmpty(questName)) {
+                Logger.Warning("ResModifyEntry is a quest-registry write for entry {0} but no quest " +
+                    "name was available; skipping.", Logger.Args(entryName));
+
                 return false;
             }
-            
+
             return wizard.SetQuestRegistryValue(questName, entryName, value);
         }
         else {
-            return wizard.SetRegistryValue(entryName, value);
-        }
+        return wizard.SetRegistryValue(entryName, value);
     }
+    }
+
+    private static string GetContextQuestName(IResultContext context) => context switch {
+        QuestResultContext quest => quest.QuestName,
+        GenericResultContext generic => generic.QuestName,
+        _ => null,
+    };
 
 }

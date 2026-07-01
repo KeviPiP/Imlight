@@ -37,6 +37,9 @@ public class DropTable {
     public int TrainingPoints { get; set; } = 0;
     public bool GrantsPotionSlot { get; set; } = false;
     public List<DropItem> Items { get; set; } = [];
+    public List<DropTreasureCard> TreasureCards { get; set; } = [];
+
+    public List<DropSpellCard> SpellCards { get; set; } = [];
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime ModifiedAt { get; set; } = DateTime.UtcNow;
     public string CreatedBy { get; set; } = Environment.UserName;
@@ -53,6 +56,21 @@ public class DropItem {
 
 }
 
+
+public class DropTreasureCard {
+    public string SpellID { get; set; } = string.Empty;
+    public string SpellName { get; set; } = string.Empty;
+    public string Notes { get; set; } = string.Empty;
+    public RequirementList? Requirements { get; set; } = null;
+}
+
+public class DropSpellCard {
+    public string SpellTemplateID { get; set; } = string.Empty;
+    public string SpellName { get; set; } = string.Empty;
+    public string Notes { get; set; } = string.Empty;
+    public RequirementList? Requirements { get; set; } = null;
+}
+
 /// <summary>
 /// Represents the actual loot results after rolling a DropTable.
 /// This is the intermediate form between DropTable (configuration) and LootInfoList (network format).
@@ -66,7 +84,10 @@ public class DropTableResult {
     public int TrainingPoints { get; set; } = 0;
     public bool GrantsPotionSlot { get; set; } = false;
     public List<DropItemResult> Items { get; set; } = [];
-    public bool HasRewards => GoldAmount > 0 || ExperienceAmount > 0 || TrainingPoints > 0 || Items.Count > 0;
+
+    public List<DropTreasureCardResult> TreasureCards { get; set; } = [];
+    public List<DropSpellCardResult> SpellCards { get; set; } = [];
+    public bool HasRewards => GoldAmount > 0 || ExperienceAmount > 0 || TrainingPoints > 0 || Items.Count > 0 || TreasureCards.Count > 0;
 
 }
 
@@ -74,6 +95,22 @@ public class DropItemResult {
 
     public string ItemId { get; set; } = string.Empty;
     public string ItemName { get; set; } = string.Empty;
+    public int Quantity { get; set; } = 1;
+
+}
+
+public class DropTreasureCardResult {
+
+    public string SpellID { get; set; } = string.Empty;
+    public string SpellName { get; set; } = string.Empty;
+    public int Quantity { get; set; } = 1;
+
+}
+
+public class DropSpellCardResult {
+
+    public string SpellTemplateID { get; set; } = string.Empty;
+    public string SpellName { get; set; } = string.Empty;
     public int Quantity { get; set; } = 1;
 
 }

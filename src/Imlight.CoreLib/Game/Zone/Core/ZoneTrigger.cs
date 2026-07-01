@@ -46,6 +46,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Akka.Actor;
 using Imcodec.ObjectProperty.TypeCache;
+using Imlight.Common;
 using Imlight.CoreLib.Game.Requirements;
 using Imlight.CoreLib.Game.Requirements.Contexts;
 using Imlight.CoreLib.Game.Results;
@@ -61,11 +62,25 @@ namespace Imlight.CoreLib.Game.Zone.Core;
 /// </summary>
 /// <param name="zoneRef">The reference to the zone that this trigger is a part of.</param>
 /// <param name="zone">The zone that this trigger is a part of.</param>
-public sealed class ZoneTrigger(IActorRef zoneRef, Zone zone, Trigger trigger) 
+public sealed class ZoneTrigger(IActorRef zoneRef, Zone zone, Trigger trigger)
     : ZoneEntity(null, null, null, zoneRef, zone) {
+
+    // A trigger never re-fires for the same player faster than this, even when it has no
+    // configured cooldown. Triggers fire on discrete player events (zone enter, proximity,
+    // posted events), so a sub-second floor is invisible to normal play but stops a trigger
+    // whose results are a no-op (e.g. an unhandled result type) from spinning at mailbox
+    // speed and flooding the actor system.
+    private const double MIN_REFIRE_INTERVAL_SECONDS = 1.0;
+
+    // Dev/testing escape hatch: when true, triggers fire even if their requirements aren't
+    // met. Opens quest-gated gates/doors on a server where quest progression isn't wired up
+    // yet. Off by default — flip [Debug] BypassTriggerRequirements in the config to enable.
+    private static readonly bool s_bypassTriggerRequirements =
+        ConfigurationManager.GetValue("Debug.BypassTriggerRequirements", false);
 
     public Trigger TriggerData { get; init; } = trigger;
     private readonly Dictionary<IActorRef, DateTime> _cooldowns = [];
+    private bool _loggedRequirementFailure;
 
     // Unsure why this override is required, but it fails without it present.
     [MessageHandler(typeof(ZONE_102_PROTOCOL.MSG_ZONEOBJECTLOADBEGIN))]
@@ -79,13 +94,15 @@ public sealed class ZoneTrigger(IActorRef zoneRef, Zone zone, Trigger trigger)
             return;
         }
 
-        // Early-out for per-player cooldowns.
-        if (TriggerData.m_cooldown > 0 && !CooldownCheck(message.PlayerActor)) {
+        // Early-out if this trigger is still within its (floored) per-player re-fire window.
+        if (!FireGuardCheck(message.PlayerActor)) {
             return;
         }
 
-        // Evaluate requirements when present.
-        if (   TriggerData.m_requirements is not null
+        // Evaluate requirements when present, unless the dev bypass is enabled (which opens
+        // every gated trigger for testing on a server where quest progression isn't wired up).
+        if (   !s_bypassTriggerRequirements
+            && TriggerData.m_requirements is not null
             && TriggerData.m_requirements.m_requirements is not null
             && TriggerData.m_requirements.m_requirements.Count > 0) {
             var queryWizardMsg = new CHARACTER_103_PROTOCOL.MSG_QUERYACTIVEWIZARD();
@@ -104,6 +121,17 @@ public sealed class ZoneTrigger(IActorRef zoneRef, Zone zone, Trigger trigger)
             );
 
             if (!requirementsMet) {
+                // Diagnostic: surface WHY a trigger (e.g. a gate/door) refuses to fire, once
+                // per trigger instance, dumping the requirement records (ReqHasGoal etc. print
+                // their quest/goal). This is how we tell a quest-gated gate apart from a bug.
+                if (!_loggedRequirementFailure) {
+                    _loggedRequirementFailure = true;
+                    Logger.Debug("Trigger '{0}' did not fire: requirements not met. Requirements: {1}",
+                        Logger.Args(TriggerData.m_triggerName,
+                            string.Join("; ", TriggerData.m_requirements.m_requirements
+                                .Select(r => r?.ToString() ?? "<null>"))));
+                }
+
                 return;
             }
         }
@@ -112,18 +140,21 @@ public sealed class ZoneTrigger(IActorRef zoneRef, Zone zone, Trigger trigger)
                                        Sender, ZoneRef, triggerName: TriggerData.m_triggerName);
     }
 
-    private bool CooldownCheck(IActorRef playerRef) {
-        if (_cooldowns.TryGetValue(playerRef, out var lastTriggered)) {
-            if (DateTime.Now - lastTriggered < TimeSpan.FromSeconds(TriggerData.m_cooldown)) {
-                return false;
-            }
-            else {
-                _cooldowns[playerRef] = DateTime.Now;
-            }
+    /// <summary>
+    /// Decides whether the trigger may fire for the given player right now. Honours the
+    /// trigger's configured cooldown, but never lets it re-fire faster than
+    /// <see cref="MIN_REFIRE_INTERVAL_SECONDS"/> so a no-op result can't spin at mailbox
+    /// speed. Records the fire time when it allows a fire. Does NOT cap lifetime fires —
+    /// gates/doors must keep working on every use.
+    /// </summary>
+    private bool FireGuardCheck(IActorRef playerRef) {
+        var effectiveCooldown = Math.Max(TriggerData.m_cooldown, MIN_REFIRE_INTERVAL_SECONDS);
+        if (_cooldowns.TryGetValue(playerRef, out var lastTriggered)
+            && DateTime.Now - lastTriggered < TimeSpan.FromSeconds(effectiveCooldown)) {
+            return false;
         }
-        else {
-            _cooldowns.Add(playerRef, DateTime.Now);
-        }
+
+        _cooldowns[playerRef] = DateTime.Now;
 
         return true;
     }

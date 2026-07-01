@@ -551,6 +551,10 @@ public static class WizardCollection {
         dbWizard.QuestBehavior = wizard.QuestBehavior;
         session.SaveChanges();
 
+        // The registry lives in its own collection (keyed by CharId), not embedded in the
+        // wizard document, so persist it separately whenever quest state is saved.
+        WizardRegistryCollection.SaveRegistry(wizard.CharId, wizard.QuestBehavior.Registry);
+
         return true;
     }
 
@@ -603,6 +607,13 @@ public static class WizardCollection {
                 .ToList();
 
             wizard.QuestBehavior.CurrentQuestInstances = myQuests;
+
+            // The registry (quest completions, one-time flags, counters) is stored in its own
+            // collection keyed by CharId; hydrate the in-memory copy used for fast checks.
+            var registry = session
+                .Query<WizardRegistry>(collectionName: WizardRegistryCollection.CollectionName)
+                .FirstOrDefault(r => r.CharId == wizard.CharId);
+            wizard.QuestBehavior.Registry = registry?.Entries ?? [];
         }
 
         // The wizard may still have some initialization to do. Inform the wizard
