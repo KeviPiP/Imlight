@@ -27,15 +27,17 @@
  * CombatDuelComponent) so the grant logic lives in exactly one place.
  */
 
-using System;
-using System.Collections.Generic;
 using Akka.Actor;
 using Imcodec.MessageLayer.Generated;
 using Imcodec.ObjectProperty;
+using Imcodec.ObjectProperty.TypeCache;
 using Imlight.Common;
 using Imlight.CoreLib.Shared.Packets;
+using Imlight.CoreLib.WizardData.Collections;
 using Imlight.CoreLib.WizardData.Models.Player;
 using Imlight.CoreLib.WizardData.Models.World;
+using System;
+using System.Collections.Generic;
 
 namespace Imlight.CoreLib.Game.DropTables;
 
@@ -55,10 +57,34 @@ public static class LootGranter {
         UpdateWizardXP(playerActor, rollResults.ExperienceAmount);
         UpdateWizardTP(playerActor, wizard, rollResults.TrainingPoints);
         UpdateCharacterItems(wizard, rollResults.Items);
+        GiveTreasureCards(playerActor, wizard, rollResults.TreasureCards);
         SendLootInfoToClient(playerActor, rollResults, wizard);
 
         if (rollResults.GrantsPotionSlot) {
             UpdateWizardPotionMax(playerActor, wizard);
+        }
+    }
+
+    private static void GiveTreasureCards(IActorRef playerActor, Wizard wizard, List<DropTreasureCardResult> treasureCards) {
+        if (treasureCards is null || treasureCards.Count == 0) {
+            return;
+        }
+
+        // Add each item to the wizard's inventory.
+        foreach (var treasureCard in treasureCards) {
+            if (!ulong.TryParse(treasureCard.SpellID, out var treasureCardID)) {
+                continue;
+            }
+            var addSpellMsg = new WIZARD_12_PROTOCOL.MSG_ADDTREASURESPELLTOBOOK {
+                SpellID = (int) treasureCardID,
+                EnchantmentID = 0,
+            };
+
+            playerActor.Tell(addSpellMsg);
+
+            // Persist the treasure card in the wizard's database record.
+            wizard.SpellbookBehavior.AddTreasureCard((uint) treasureCardID);
+            WizardCollection.AddTreasureCard(wizard, (uint) treasureCardID);
         }
     }
 
@@ -151,7 +177,7 @@ public static class LootGranter {
 
     private static void SendLootInfoToClient(IActorRef playerActor, DropTableResult results, Wizard wizard) {
         // Inform the game client of the loot results.
-        if (results.Items.Count == 0) {
+        if (results.Items.Count == 0 && results.TreasureCards.Count == 0) {
             return;
         }
 

@@ -67,6 +67,13 @@ public static class DropTableConverter {
             });
         }
 
+        if (dropResult.GrantsPotionSlot) {
+            lootItems.Add(new MaxPotionLootInfo {
+                m_lootType = LOOT_TYPE.LOOT_TYPE_MAX_POTION,
+                m_maxPotionToAdd = 1
+            });
+        }
+
         // Convert item rewards.
         foreach (var itemResult in dropResult.Items) {
             if (!string.IsNullOrEmpty(itemResult.ItemId)) {
@@ -79,6 +86,33 @@ public static class DropTableConverter {
                 }
             }
         }
+
+        // Convert treasure card rewards
+        foreach (var treasureCardResult in dropResult.TreasureCards) {
+            if (!string.IsNullOrEmpty(treasureCardResult.SpellID)) {
+                if (TryParseSpellId(treasureCardResult.SpellID, out var spellGid)) {
+                    lootItems.Add(new TreasureCardLootInfo {
+                        m_lootType = LOOT_TYPE.LOOT_TYPE_TREASURE_CARD,
+                        m_spellID = spellGid,
+                        m_numItems = treasureCardResult.Quantity
+                    });
+                }
+            }
+        }
+
+        // * TODO Convert add spell card rewards
+        //foreach (var spellCardResult in dropResult.TreasureCards) {
+        //    if (!string.IsNullOrEmpty(spellCardResult.SpellID)) {
+        //        if (TryParseSpellId(spellCardResult.SpellID, out var spellGid)) {
+        //            lootItems.Add(new AddSpellLootInfo {
+        //                m_lootType = LOOT_TYPE.LOOT_TYPE_ADD_SPELL,
+        //                m_spellID = spellGid,
+        //                m_spellName = spellCardResult.SpellName
+        //            });
+        //        }
+        //    }
+        //}
+
 
         lootList.m_loot = lootItems;
         
@@ -119,6 +153,29 @@ public static class DropTableConverter {
         if (itemId.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) {
             if (ulong.TryParse(itemId[2..], System.Globalization.NumberStyles.HexNumber, null, out ulongValue)) {
                 gid = ulongValue;
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryParseSpellId(string spellId, out uint gid) {
+        gid = 0;
+
+        if (string.IsNullOrWhiteSpace(spellId)) {
+            return false;
+        }
+
+        if (uint.TryParse(spellId, out var uintValue)) {
+            gid = uintValue;
+            return true;
+        }
+
+        if (spellId.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) {
+            if (uint.TryParse(spellId[2..], System.Globalization.NumberStyles.HexNumber, null, out uintValue)) {
+                gid = uintValue;
 
                 return true;
             }
