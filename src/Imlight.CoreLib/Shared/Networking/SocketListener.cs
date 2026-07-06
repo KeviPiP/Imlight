@@ -110,6 +110,11 @@ internal sealed class SocketListener : ReceiveActor, IDisposable {
         _socket?.Dispose();
     }
 
+    protected override void PostStop() {
+        Dispose();
+        base.PostStop();
+    }
+
     private void StartReceive() {
         if (_isDisposed) {
             return;
@@ -136,6 +141,10 @@ internal sealed class SocketListener : ReceiveActor, IDisposable {
     }
 
     private void OnSocketReadFailed(SocketReadFailed result) {
+        if (_isDisposed) {
+            return;
+        }
+
         if (_closeOnSocketException) {
             Logger.Error("SessionActor {Id} receive operation failed: {Message}",
                 Logger.Args(_sessionid, result.Error.Message));
@@ -143,8 +152,6 @@ internal sealed class SocketListener : ReceiveActor, IDisposable {
             return;
         }
 
-        // Schedule the next read — the socket stays open when
-        // _closeOnSocketException is false.
         StartReceive();
     }
 

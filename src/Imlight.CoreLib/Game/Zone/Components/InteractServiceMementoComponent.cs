@@ -87,6 +87,7 @@ internal sealed class InteractServiceMementoComponent(ZoneEntity entity)
     private readonly Dictionary<ulong, IActorRef> _playersInRenderRange = [];
     private readonly Dictionary<ulong, WizBangs> _lastSentWizBangs = [];
     private List<IServiceComponent> _serviceComponents = [];
+    private Dictionary<int, IServiceComponent> _optionIndexToComponent = [];
     private ServiceMementoBase _serviceMemento;
     private MadlibBlock _madlibBlock;
     private float _renderDistance;
@@ -176,19 +177,12 @@ internal sealed class InteractServiceMementoComponent(ZoneEntity entity)
             SendActorServiceOptions(playerActor, reinteract);
         }
 
-        // Find the service component that corresponds to the service name. Multiple
-        // components can share one service name (e.g. a reagent node or chest that also
-        // carries a WizardSelectBehavior additionally gets InteractQuestSelectComponent,
-        // all named "Interact"). Dispatch to the component that actually presents an
-        // interaction option to THIS player — otherwise InteractQuestSelectComponent
-        // (which offers nothing unless a matching scavenge goal is active) shadows the
-        // reagent/chest handler via FirstOrDefault and the interaction silently does nothing.
-        var candidates = _serviceComponents.Where(c => c.ServiceName == serviceName).ToList();
-        var serviceComponent = candidates.FirstOrDefault(c => c.GetServiceOptions(playerCharacter).Any())
-                               ?? candidates.FirstOrDefault();
-        if (serviceComponent == null) {
-            Logger.Warning("Service component not found for NPC {0} with service name {1}",
-                Logger.Args(Entity.ActiveGameObject.m_debugName, serviceName));
+        // Route to the component that owns this option index.
+        // Using FirstOrDefault by ServiceName is unsafe when multiple components share
+        // the same service name (e.g. InteractQuestSelectComponent shadowing WoodenChestComponent).
+        if (!_optionIndexToComponent.TryGetValue((int) serviceIndex, out var serviceComponent)) {
+            Logger.Warning("No component owns service index {0} for NPC {1} with service name {2}",
+                Logger.Args(serviceIndex, Entity.ActiveGameObject.m_debugName, serviceName));
 
             return;
         }
@@ -309,8 +303,16 @@ internal sealed class InteractServiceMementoComponent(ZoneEntity entity)
 
         var gameObjTemplate = Entity.Template as GameObjectTemplate;
 
-        // Get all service options.
-        var allOptions = _serviceComponents.SelectMany(c => c.GetServiceOptions(playerCharacter)).ToList();
+        // Get all service options and track which component owns each flat index.
+        _optionIndexToComponent.Clear();
+        var allOptions = new List<ServiceOptionBase>();
+        foreach (var component in _serviceComponents) {
+            var componentOptions = component.GetServiceOptions(playerCharacter).ToList();
+            foreach (var option in componentOptions) {
+                _optionIndexToComponent[allOptions.Count] = component;
+                allOptions.Add(option);
+            }
+        }
 
         // Get UI overrides based on priority.
         var sortedComponents = SortComponentsByPriority(_serviceComponents);
