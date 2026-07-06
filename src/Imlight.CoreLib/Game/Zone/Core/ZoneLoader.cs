@@ -197,10 +197,19 @@ internal sealed class ZoneLoader : ReceiveProtocolDispatcher {
     }
 
     private WizZoneData LoadZoneData() {
-        var data = _wad.OpenFile(ZONE_DATA_FILE_NAME);
+        /* 
+         * gamedata.bin can sometimes be gamedata.xml
+         * example wad: Krokotopia-KT_Selenopolis-KT_Z04_Selenopolis.wad has a gamedata.xml instead of gamedata.bin
+        */
+        string zoneDataFileName = ZONE_DATA_FILE_NAME;
+        if (_wad.ContainsFile("gamedata.xml") && !_wad.ContainsFile("gamedata.bin")) {
+            zoneDataFileName = "gamedata.xml";
+        }
+
+        var data = _wad.OpenFile(zoneDataFileName);
         if (data is null) {
             Logger.Error("Failed to load zone data from {zone}",
-                Logger.Args(ZONE_DATA_FILE_NAME));
+                Logger.Args(zoneDataFileName));
 
             return null;
         }
@@ -208,7 +217,7 @@ internal sealed class ZoneLoader : ReceiveProtocolDispatcher {
         var serializer = new BindSerializer();
         if (!serializer.Deserialize<WizZoneData>(data?.ToArray(), 1, out var zoneData)) {
             Logger.Error("Failed to deserialize zone data from {zone}",
-                Logger.Args(ZONE_DATA_FILE_NAME));
+                Logger.Args(zoneDataFileName));
 
             return null;
         }
