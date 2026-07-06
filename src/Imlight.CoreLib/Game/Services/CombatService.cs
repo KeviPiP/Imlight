@@ -73,7 +73,7 @@ internal class CombatService(SessionActor sessionActor) : MessageService(session
     private static readonly (int Min, int Max) s_fallbackLootGold =
         ParseGoldRange(ConfigurationManager.GetValue("Combat.FallbackLootGold", "0-0"));
 
-    public ITimerScheduler Timers { get; set; }
+    // public ITimerScheduler Timers { get; set; }
 
     private readonly CoreObjectSerializer _effectSerializer = new(
         behaviors: SerializerFlags.None
