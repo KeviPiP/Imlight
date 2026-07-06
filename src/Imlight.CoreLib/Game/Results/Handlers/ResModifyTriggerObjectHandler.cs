@@ -61,7 +61,7 @@ internal sealed class ResModifyTriggerObjectHandler : BaseResultHandler<ResModif
             Sender = playerRef
         };
 
-        zoneActor.Tell(new ZONE_102_PROTOCOL.MSG_ZONESUPERVISORBROADCAST {
+        zoneActor.Tell(new ZONE_102_PROTOCOL.MSG_ZONEBROADCAST {
             Messages = [stateChangeMsg],
             Sender = playerRef
         });
