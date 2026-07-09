@@ -77,6 +77,8 @@ public sealed class ZoneTrigger(IActorRef zoneRef, Zone zone, Trigger trigger)
     // yet. Off by default — flip [Debug] BypassTriggerRequirements in the config to enable.
     private static readonly bool s_bypassTriggerRequirements =
         ConfigurationManager.GetValue("Debug.BypassTriggerRequirements", false);
+    private static readonly bool _LogTriggerHit =
+    ConfigurationManager.GetValue("Debug.LogTriggerHit", false);
 
     public Trigger TriggerData { get; init; } = trigger;
     private readonly Dictionary<IActorRef, DateTime> _cooldowns = [];
@@ -99,6 +101,15 @@ public sealed class ZoneTrigger(IActorRef zoneRef, Zone zone, Trigger trigger)
             return;
         }
 
+        // a way to see which triggers are which for quest debugging purposes.
+        if (_LogTriggerHit) {
+            Logger.Debug("Hit trigger '{0}' in zone '{1}'",
+                Logger.Args(
+                    TriggerData.m_triggerName,
+                    Zone.ZonePath
+                    )
+                );
+        }
         // Evaluate requirements when present, unless the dev bypass is enabled (which opens
         // every gated trigger for testing on a server where quest progression isn't wired up).
         if (   !s_bypassTriggerRequirements

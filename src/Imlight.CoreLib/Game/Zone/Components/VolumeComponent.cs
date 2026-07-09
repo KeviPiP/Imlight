@@ -38,6 +38,7 @@
 
 using Akka.Actor;
 using Imcodec.ObjectProperty.TypeCache;
+using Imlight.Common;
 using Imlight.CoreLib.Game.Zone.Core;
 using Imlight.CoreLib.Shared.Networking;
 using Imlight.CoreLib.Shared.Packets;
@@ -50,6 +51,10 @@ internal sealed class VolumeComponent(ZoneEntity entity) : ZoneEntityComponent(e
 
     private readonly Dictionary<CoreObject, IActorRef> _playersInRange = [];
     private Volume _volume;
+    private readonly bool _logVolumeExit =
+        ConfigurationManager.GetValue("Debug.LogVolumeHit", false);
+    private readonly bool _logVolumeEnter =
+        ConfigurationManager.GetValue("Debug.LogVolumeHit", false);
 
     public static bool ShouldAttachToEntity(CoreTemplate template) 
         => template is GameObjectTemplate goT && goT.m_templateID == 1700;
@@ -69,10 +74,29 @@ internal sealed class VolumeComponent(ZoneEntity entity) : ZoneEntityComponent(e
 
         // Check if the player is now in range of the object.
         if (IsInRadius(playerObj, _volume.m_radius) && !_playersInRange.ContainsKey(playerObj)) {
+            if (_logVolumeEnter) {
+                Logger.Debug("Player entered volume: '{0}', tag: '{1}', location: '{2}'",
+                    Logger.Args(
+                        _volume.m_volumeName.ToString(),
+                        _volume.m_zoneTag,
+                        _volume.m_location.ToString()
+                    )
+                );
+            }
+
             // If the player is in range, trigger the enter events.
             OnProximityEnter(playerObj, playerActor);
             _playersInRange.Add(playerObj, playerActor);
         } else if (!IsInRadius(playerObj, _volume.m_radius) && _playersInRange.ContainsKey(playerObj)) {
+            if (_logVolumeExit) {
+                Logger.Debug("Player exited volume: '{0}', tag: '{1}', location: '{2}'",
+                    Logger.Args(
+                        _volume.m_volumeName.ToString(),
+                        _volume.m_zoneTag,
+                        _volume.m_location.ToString()
+                    )
+                );
+            }
             // If the player is out of range, trigger the exit events.
             OnProximityExit(playerObj, playerActor);
             _playersInRange.Remove(playerObj);
